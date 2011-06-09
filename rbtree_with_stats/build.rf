@@ -1,7 +1,0 @@
--od"bin"
--of"bin\rbtree_with_stats.exe"
-
--I""
-
-"rbtree_with_stats.d"
-

@@ -1760,6 +1760,8 @@ void measurePerformance(bool useStats)() {
 		//writefln("%s", *items._find(5));
 		//foreach (item; items) writefln("%d", item);
 		for (int n = 0; n < itemSize; n++) {
+			if (n == 100_000 || n == 700_000) continue;
+
 			scope user = new User(n, n * 100, n);
 			
 			//writefln("%d", count);
@@ -1774,7 +1776,11 @@ void measurePerformance(bool useStats)() {
 			*/
 			static if (useStats) {
 				int count = items.countLesser(items._find(user));
-				assert(count == n);
+				
+				int v = n;
+				if (n > 100_000) v--;
+				if (n > 700_000) v--;
+				assert(count == v);
 			}
 		}
 	});
