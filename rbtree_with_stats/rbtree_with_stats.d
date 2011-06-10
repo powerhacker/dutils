@@ -1759,29 +1759,33 @@ void measurePerformance(bool useStats)() {
 		//items._end._left.printTree();
 		//writefln("%s", *items._find(5));
 		//foreach (item; items) writefln("%d", item);
-		for (int n = 0; n < itemSize; n++) {
-			if (n == 100_000 || n == 700_000) continue;
-
-			scope user = new User(n, n * 100, n);
-			
-			//writefln("%d", count);
-			//writefln("-----------------------------------------------------");
-			//writefln("######## Count(%d): %d", n, count);
-			/*
-			if (n > 500) {
-				assert(count == n - 1);
-			} else {
-				assert(count == n);
-			}
-			*/
-			static if (useStats) {
-				int count = items.countLesser(items._find(user));
-				
-				int v = n;
-				if (n > 100_000) v--;
-				if (n > 700_000) v--;
-				assert(count == v);
-			}
+		static if (useStats) {
+			measure("Count all items position one by one (only with stats) O(N*log(N))", {
+				for (int n = 0; n < itemSize; n++) {
+					if (n == 100_000 || n == 700_000) continue;
+		
+					scope user = new User(n, n * 100, n);
+					
+					//writefln("%d", count);
+					//writefln("-----------------------------------------------------");
+					//writefln("######## Count(%d): %d", n, count);
+					/*
+					if (n > 500) {
+						assert(count == n - 1);
+					} else {
+						assert(count == n);
+					}
+					*/
+					static if (useStats) {
+						int count = items.countLesser(items._find(user));
+						
+						int v = n;
+						if (n > 100_000) v--;
+						if (n > 700_000) v--;
+						assert(count == v);
+					}
+				}
+			});
 		}
 	});
 }
