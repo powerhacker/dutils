@@ -1604,7 +1604,7 @@ assert(std.algorithm.equal(rbt[], [5]));
 				Node current = _end;
 				int currentPosition = _end.childCountLeft;
 				while (true) {
-					int currentPositionExpected = getNodePosition(current);
+					//int currentPositionExpected = getNodePosition(current);
 					if (currentPosition == positionToFind) return current;
 					
 					if (positionToFind < currentPosition) {
