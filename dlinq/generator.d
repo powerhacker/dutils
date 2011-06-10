@@ -45,27 +45,23 @@ class Generator(Type) : Fiber {
 string generator(Type, string t)() {
 	//mixin("delegate (out uint result) {" ~ t ~ "}");
 	return (
-		"return Generator!uint(delegate (out " ~ Type.stringof ~ " result) { " ~
+		"return Generator!" ~ Type.stringof ~ "(delegate (out " ~ Type.stringof ~ " result) { " ~
 			"void yield(" ~ Type.stringof ~ " v) { __yield!result(v); }" ~
 			t ~
 		"});"
 	);
 }
 
-auto limit(Type)(Generator!Type parentGenerator, int count) {
-	mixin(generator!(Type, q{
-		foreach (v; parentGenerator) {
-			yield(v);
-			if (count-- <= 0) break;
-		}
-	}));
-}
+auto limit(Type)(Generator!Type parentGenerator, int count) { mixin(generator!(Type, q{
+	foreach (v; parentGenerator) {
+		yield(v);
+		if (count-- <= 0) break;
+	}
+})); }
 
-auto positiveNumbers() {
-	mixin(generator!(uint, q{
-		uint n = 0;
-		while (true) {
-			yield(++n);
-		}
-	}));
-}
+auto positiveNumbers(Type = uint)() { mixin(generator!(Type, q{
+	Type n = 0;
+	while (true) {
+		yield(++n);
+	}
+})); }
