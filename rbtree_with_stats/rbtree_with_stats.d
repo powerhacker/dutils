@@ -965,7 +965,7 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
             _rbegin = _rbegin.next;
         }
         
-        int length() {
+        @property int length() {
         	//writefln("Begin: %d:%s", countLesser(_begin), *_begin);
         	//writefln("End: %d:%s", countLesser(_end), *_end);
         	//return _begin
@@ -985,6 +985,30 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
         	}
         }
 
+        Range opSlice() {
+        	return new Range(_rbegin, _rend);
+        }
+        
+        Range opSlice(int start, int end) {
+        	static if (hasStats) {
+	        	int startPosition = getNodePosition(_rbegin);
+	        	return new Range(
+	        		locateNodeAtPosition(startPosition + start),
+	        		locateNodeAtPosition(startPosition + end)
+	        	);
+	        } else {
+	        	return skip(start).limit(end - start);
+	        }
+        }
+
+        Node opIndex(int index) {
+        	static if (hasStats) {
+        		return locateNodeAtPosition(getNodePosition(_rbegin) + index);
+        	} else {
+        		return skip(index)._rbegin;
+        	}
+        }
+        
         /**
          * pop the back element from the range
          *
@@ -1253,14 +1277,14 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
         Complexity: $(BIGOH m * log(n)) (where m is the number of elements in
                     the range)
      +/
-    Range remove(Take!Range r)
+    Range remove(Range r)
     {
-        auto b = r.source._rbegin;
+        auto b = r._rbegin;
 
         while(!r.empty)
             r.popFront(); // move take range to its last element
 
-        auto e = r.source._rbegin;
+        auto e = r._rbegin;
 
         while(b != e)
         {
@@ -1725,6 +1749,7 @@ void measurePerformance(bool useStats)() {
 		measure("Length(skipx40:800_000)", {
 			for (int n = 0; n < 40; n++) {
 				int result = items.all.skip(800_000).length;
+				//int result = items.all[800_000..items.all.length].length;
 				if (n == 40 - 1) {
 					writefln("%d", items.all.skip(800_000).front.userId);
 					writefln("%d", items.all.skip(800_000).back.userId);
@@ -1735,7 +1760,8 @@ void measurePerformance(bool useStats)() {
 		
 		measure("Length(skip+limitx40:100_000,600_000)", {
 			for (int n = 0; n < 40; n++) {
-				int result = items.all.skip(100_000).limit(600_000).length;
+				//int result = items.all.skip(100_000).limit(600_000).length;
+				int result = items.all[100_000 .. 700_000].length;
 				if (n == 40 - 1) {
 					writefln("%d", items.all.skip(100_000).limit(600_000).front.userId);
 					writefln("%d", items.all.skip(100_000).limit(600_000).back.userId);
