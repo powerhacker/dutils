@@ -6,6 +6,9 @@ import std.stdio;
 import std.datetime;
 import core.memory;
 import std.random;
+import std.socket;
+import std.string;
+import std.array;
 
 class User {
 	uint userId;
@@ -35,7 +38,15 @@ class User {
 	}
 	
 	static bool compareByScoreReverse(User a, User b) {
-		return compareByScore(b, a);
+		if (a.score == b.score) {
+			if (a.timestamp == b.timestamp) {
+				return a.userId < b.userId;
+			} else {
+				return a.timestamp < b.timestamp;
+			}
+		} else { 
+			return a.score > b.score;
+		}
 	}
 	
 	static bool compareByScore(User a, User b) {
@@ -226,7 +237,7 @@ void test1() {
 	for (int n = 0; n < 1000; n++) {
 		int score;
 		score = (n < 20) ? 2980 : uniform(0, 3000, gen);
-		userStats.setUser(new User(n, score, n * 2));
+		userStats.setUser(new User(n, score, 10000 - n * 2));
 	}
 	userStats.setUser(new User(1000, 99, 400));
 	userStats.setUser(new User(1001, 1000, 400));
@@ -277,9 +288,123 @@ void test2() {
 	GC.collect();
 }
 
+class RankingClient {
+	public Socket socket;
+	ubyte[] data;
+	
+	public this(Socket socket) {
+		this.socket = socket;
+		socket.blocking = false;
+	}
+	
+	void init() {
+		//this.socket.send("Hello World!\r\n");
+	}
+	
+	bool receive() {
+		scope ubyte[] temp = new ubyte[1024];
+		//writefln("%s %s", socket, this);
+		int totalReceivedLength = 0;
+		while (true) {
+			int receivedLength = socket.receive(temp);
+			totalReceivedLength += receivedLength;
+			if (receivedLength <= 0) {
+				break;
+			}
+			data ~= temp[0..receivedLength];
+		}
+		handleData();
+		return (totalReceivedLength > 0);
+	}
+	
+	void handlePacket(ubyte[] data) {
+		switch (data[0]) {
+			case 1:
+			break;
+		}
+	}
+	
+	void handleData() {
+		ushort packetSize;
+		//writefln("[1]");
+		if (data.length >= packetSize.sizeof) {
+			packetSize = *cast(typeof(packetSize) *)data.ptr;
+			
+			int packetTotalLength = packetSize.sizeof + 1 + packetSize;
+			
+			//writefln("[2] %d, %d", packetSize, data.length);
+			if (data.length >= packetTotalLength) {
+				//writefln("[3]");
+				handlePacket(data[packetSize.sizeof..packetTotalLength].dup);
+				data = data[packetTotalLength..$].dup;
+			}
+		}
+		/*
+		int index;
+		if ((index = std.string.indexOf(cast(string)data, "\n")) != -1) {
+			string line = cast(string)data[0..index].dup;
+			data = data[index + 1..$].dup;
+			writefln("handleData:'%s'", line);
+		}
+		*/
+	}
+}
+
+class RankingServer : TcpSocket {
+	this() {
+		bind(new InternetAddress("0.0.0.0", 9777));
+		listen(1024);
+		blocking = false;
+	}
+	
+	RankingClient[Socket] clients;
+	
+	void acceptLoop() {
+		Socket socketClient;
+		scope SocketSet readSet = new SocketSet();
+		scope SocketSet writeSet = new SocketSet();
+		scope SocketSet errorSet = new SocketSet();
+		while (true) {
+			readSet.add(this);
+			foreach (socket; clients.keys) {
+				readSet.add(socket);
+			}
+			int count = Socket.select(readSet, writeSet, errorSet);
+			
+			if (readSet.isSet(this)) {
+				socketClient = accept();
+				if (socketClient !is null) {
+					RankingClient rankingClient = new RankingClient(socketClient);
+					clients[socketClient] = rankingClient; 
+					rankingClient.init();
+					//rankingClient.receive();
+				}
+			}
+
+			readSockets:;			
+
+			foreach (Socket socket, RankingClient client; clients) {
+				if (readSet.isSet(socket)) {
+					if (!client.receive()) {
+						clients.remove(socket);
+						goto readSockets;					
+					}
+				}
+			}
+			
+			readSet.reset();
+			writeSet.reset();
+			errorSet.reset();
+		}
+	}
+}
+
 int main(string[] args) {
-	test1();
-	test2();
+	RankingServer socketServer = new RankingServer();
+	socketServer.acceptLoop();
+
+	//test1();
+	//test2();
 	
 	return 0;
 }
