@@ -1,10 +1,10 @@
+module rbtree_with_stats;
+
 import std.functional;
 import core.memory, core.stdc.stdlib, core.stdc.string, std.algorithm,
     std.conv, std.exception, std.functional, std.range, std.traits,
     std.typecons, std.typetuple;
 import std.stdio;
-import std.datetime;
-import core.memory;
 
 //debug = RB_ROTATION;
 //debug = RB_ADD;
@@ -888,46 +888,87 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
     {
         private Node _rbegin;
         private Node _rend;
-
-        private this(Node b, Node e)
-        {
+		private int  _rbeginPosition;
+		private int  _rendPosition;
+		
+        public int getOffsetPosition(int index) {
+        	if (_rbeginPosition == -1) {
+        		return getNodePosition(_rbegin) + index;
+        	}
+        	return _rbeginPosition + index;
+        }
+        
+        private this(Node b, Node e, int rbeginPosition = -1, int rendPosition = -1) {
+            if (b is null) b = locateNodeAtPosition(rbeginPosition);
+            if (e is null) e = locateNodeAtPosition(rendPosition);
             _rbegin = b;
             _rend = e;
+            _rbeginPosition = rbeginPosition;
+            _rendPosition = rendPosition;
+        }
+        
+        public Range clone() {
+        	return new Range(_rbegin, _rend, _rbeginPosition, _rendPosition);
         }
         
         public Range limit(int limitCount) {
+        	assert (limitCount >= 0);
+        	
+        	if (_rbeginPosition != -1 && _rendPosition != -1) {
+	        	if (_rbeginPosition + limitCount > _rendPosition) {
+	        		limitCount = _rendPosition - _rbeginPosition; 
+	        	}
+	        } else {
+	        	// Unsecure.
+	        }
+        	return limitUnchecked(limitCount);
+        }
+        
+        public Range limitUnchecked(int limitCount) {
+        	assert (limitCount >= 0);
+
         	static if (hasStats) {
-        		return new Range(_rbegin, locateNodeAtPosition(getNodePosition(_rbegin) + limitCount));
+       			return new Range(
+       				_rbegin, null,
+       				_rbeginPosition, getOffsetPosition(limitCount)
+       			);
         	} else {
 	    		Node current = _rbegin;
 	    		int count = 0;
 	    		while (true) {
 	    			if (count == limitCount) {
-	    				return new Range(_rbegin, current);
+	    				return new Range(_rbegin, current, getOffsetPosition(0), getOffsetPosition(count));
 	    			}
 	    			count++;
 	    			if (current is _rend) break;
 	    			current = current.next;
 	    		}
-	    		return new Range(_rbegin, _rend); 
+	    		return this.clone; 
         	}
         }
         
         public Range skip(int skipCount) {
+        	return skipUnchecked(skipCount);
+        }
+        
+        public Range skipUnchecked(int skipCount) {
         	static if (hasStats) {
-        		return new Range(locateNodeAtPosition(getNodePosition(_rbegin) + skipCount), _rend);
+        		return new Range(
+        			null, _rend,
+        			getOffsetPosition(skipCount), _rendPosition
+        		);
         	} else {
 	    		Node current = _rbegin;
 	    		int count = 0;
 	    		while (true) {
 	    			if (count == skipCount) {
-	    				return new Range(current, _rend);
+	    				return new Range(current, _rend, getOffsetPosition(count), _rendPosition);
 	    			}
 	    			count++;
 	    			if (current is _rend) break;
 	    			current = current.next;
 	    		}
-	    		return new Range(_rend, _rend); 
+	    		return new Range(_rend, _rend, _rendPosition, _rendPosition); 
         	}
         }
         
@@ -969,6 +1010,11 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
         	//writefln("Begin: %d:%s", countLesser(_begin), *_begin);
         	//writefln("End: %d:%s", countLesser(_end), *_end);
         	//return _begin
+        	
+        	if (_rbeginPosition != -1 && _rendPosition != -1) {
+        		return _rendPosition - _rbeginPosition;
+        	}
+        	
         	static if (hasStats) {
         		return countLesser(_rend) - countLesser(_rbegin);
         	} else {
@@ -986,15 +1032,16 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
         }
 
         Range opSlice() {
-        	return new Range(_rbegin, _rend);
+        	return this.clone();
         }
         
         Range opSlice(int start, int end) {
         	static if (hasStats) {
-	        	int startPosition = getNodePosition(_rbegin);
 	        	return new Range(
-	        		locateNodeAtPosition(startPosition + start),
-	        		locateNodeAtPosition(startPosition + end)
+	        		null,
+	        		null,
+	        		getOffsetPosition(start),
+	        		getOffsetPosition(end)
 	        	);
 	        } else {
 	        	return skip(start).limit(end - start);
@@ -1003,7 +1050,7 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
 
         Node opIndex(int index) {
         	static if (hasStats) {
-        		return locateNodeAtPosition(getNodePosition(_rbegin) + index);
+        		return locateNodeAtPosition(getOffsetPosition(index));
         	} else {
         		return skip(index)._rbegin;
         	}
@@ -1103,7 +1150,7 @@ class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool h
      */
     Range opSlice()
     {
-        return new Range(_end.leftmost, _end);
+        return all();
     }
 
     /**
@@ -1658,172 +1705,8 @@ assert(std.algorithm.equal(rbt[], [5]));
 	}
     
     @property Range all() {
-    	return new Range(_end.leftmost, _end);
+    	//return new Range(_end.leftmost, _end);
+    	return new Range(_end.leftmost, _end, 0, _length);
     }
 }
 
-class User {
-	uint userId;
-	uint score;
-	uint timestamp;
-	
-	this(uint userId, uint score, uint timestamp) {
-		this.userId    = userId;
-		this.score     = score;
-		this.timestamp = timestamp;
-	}
-	
-	static bool compareByScore(User a, User b) {
-		if (a.score == b.score) {
-			if (a.timestamp == b.timestamp) {
-				return a.userId < b.userId;
-			} else {
-				return a.timestamp < b.timestamp;
-			}
-		} else { 
-			return a.score < b.score;
-		}
-	}
-	
-	public string toString() {
-		return std.string.format("User(userId:%d, timestamp:%d, score:%d)", userId, timestamp, score);
-	}
-}
-
-const bool useStats = true;
-
-void measure(string desc, void delegate() dg) {
-	auto start = Clock.currTime;
-	dg();
-	auto end = Clock.currTime;
-	writefln("Time('%s'): %s", desc, end - start);
-	writefln("");
-}
-
-void measurePerformance(bool useStats)() {
-	writefln("---------------------------------------");
-	writefln("measurePerformance(useStats=%s)", useStats);
-	writefln("---------------------------------------");
-	
-	//RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool hasStats = false)
-	
-	auto start = Clock.currTime;
-	measure("Total", {
-		int itemSize = 1_000_000;
-		
-		auto items = new RedBlackTree!(User, User.compareByScore, false, useStats)();
-		User generate(uint id) {
-			return new User(id, id * 100, id);
-		}
-	
-		writefln("NodeSize: %d", (*items._end).sizeof);
-		
-		//for (int n = itemSize; n >= 11; n--) {
-		measure(std.string.format("Insert(%d) items", itemSize), {
-			for (int n = 0; n < itemSize; n++) {
-				items.insert(generate(n));
-			}
-		});
-		
-		items.removeKey(generate(100_000));
-		items.removeKey(generate(700_000));
-
-		measure(std.string.format("locateNodeAtPosition"), {
-			for (int n = 0; n < 40; n++) {
-				int result = items.locateNodeAtPosition(800_000).value.userId;
-				if (n == 40 - 1) {
-					writefln("%s", result);
-				}
-			}
-		});
-		
-		measure("IterateUpperBound", {
-			foreach (item; items.upperBound(generate(1_000_000 - 100_000))) {
-				//writefln("Item: %s", item);
-			}
-		});
-	
-		measure("LengthAll", {
-			writefln("%d", items.all.length);
-		});
-		measure("Length(skipx40:800_000)", {
-			for (int n = 0; n < 40; n++) {
-				int result = items.all.skip(800_000).length;
-				//int result = items.all[800_000..items.all.length].length;
-				if (n == 40 - 1) {
-					writefln("%d", items.all.skip(800_000).front.userId);
-					writefln("%d", items.all.skip(800_000).back.userId);
-					writefln("%d", result);
-				}
-			}
-		});
-		
-		measure("Length(skip+limitx40:100_000,600_000)", {
-			for (int n = 0; n < 40; n++) {
-				//int result = items.all.skip(100_000).limit(600_000).length;
-				int result = items.all[100_000 .. 700_000].length;
-				if (n == 40 - 1) {
-					writefln("%d", items.all.skip(100_000).limit(600_000).front.userId);
-					writefln("%d", items.all.skip(100_000).limit(600_000).back.userId);
-					writefln("%d", result);
-				}
-			}
-		});
-		measure("Length(lesserx40)", {
-			for (int n = 0; n < 40; n++) {
-				int result = items.countLesser(items._find(generate(1_000_000 - 10)));
-				if (n == 40 - 1) writefln("%d", result);
-			}
-		});
-		measure("LengthBigRangex40", {
-			for (int n = 0; n < 40; n++) {
-				int result = items.upperBound(generate(1_000_000 - 900_000)).length;
-				if (n == 40 - 1) writefln("%d", result);
-			}
-		});
-		
-		//items._end._left.printTree();
-		//writefln("%s", *items._find(5));
-		//foreach (item; items) writefln("%d", item);
-		static if (useStats) {
-			measure("Count all items position one by one (only with stats) O(N*log(N))", {
-				for (int n = 0; n < itemSize; n++) {
-					if (n == 100_000 || n == 700_000) continue;
-		
-					scope user = new User(n, n * 100, n);
-					
-					//writefln("%d", count);
-					//writefln("-----------------------------------------------------");
-					//writefln("######## Count(%d): %d", n, count);
-					/*
-					if (n > 500) {
-						assert(count == n - 1);
-					} else {
-						assert(count == n);
-					}
-					*/
-					static if (useStats) {
-						int count = items.countLesser(items._find(user));
-						
-						int v = n;
-						if (n > 100_000) v--;
-						if (n > 700_000) v--;
-						assert(count == v);
-					}
-				}
-			});
-		}
-	});
-}
-
-int main(string[] args) {
-	GC.disable();
-	{
-		measurePerformance!(true);
-		measurePerformance!(false);
-	}
-	GC.enable();
-	GC.collect();
-	
-	return 0;
-}
