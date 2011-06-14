@@ -2,6 +2,7 @@ module test;
 
 import rbtree_with_stats;
 
+import std.conv;
 import std.stdio;
 import std.datetime;
 import core.memory;
@@ -9,20 +10,68 @@ import std.random;
 import std.socket;
 import std.string;
 import std.array;
+import std.process;
+import std.stream;
+
+ubyte[] TA(T)(ref T a) {
+	return cast(ubyte[])((&a)[0..1]);
+}
+
+int compare3way(T)(ref T a, ref T b) {
+	if (a < b) {
+		return -1;
+	} else if (a == b) {
+		return  0;
+	} else {
+		return +1;
+	}
+}
 
 class User {
+	static struct Score {
+		bool  enabled;
+		uint  timestamp;
+		uint  score;
+		void* node;
+		
+		static int compare(ref Score a, ref Score b) {
+			int result;
+			if ((result = compare3way(a.score, b.score)) != 0) return result;
+			if ((result = compare3way(a.timestamp, b.timestamp)) != 0) return result;
+			return 0;
+		}
+		
+		string toString() {
+			return std.string.format("User.Score(enabled=%d, score=%d, timestamp=%d)", enabled, score, timestamp);
+		}
+	} 
+
 	uint userId;
-	uint score;
+	Score[] scores;
 	
-	/**
-	 * Time where 
-	 */
-	uint timestamp;
+	static User create(uint userId) {
+		return new User(userId);
+	}
+	
+	User setScore(uint score, uint timestamp, uint index = 0) {
+		if (scores.length < index + 1) scores.length = index + 1;
+		scores[index].enabled = true;
+		scores[index].timestamp = timestamp;
+		scores[index].score = score;
+		return this;
+	}
+	
+	this(uint userId) {
+		this.userId    = userId;
+	}
 	
 	this(uint userId, uint score, uint timestamp) {
-		this.userId    = userId;
-		this.score     = score;
-		this.timestamp = timestamp;
+		this(userId);
+		setScore(score, timestamp);
+	}
+	
+	~this() {
+		delete scores;
 	}
 	
 	/*
@@ -32,11 +81,24 @@ class User {
 		this.timestamp = that.timestamp;
 	}
 	*/
-	
+
 	static bool compareByUserId(User a, User b) {
+		//writefln("compareByUserId");
 		return a.userId < b.userId;
 	}
 	
+	static bool delegate(User a, User b) getCompareByScoreIndex(int index) {
+		return delegate(User a, User b) {
+			//writefln("Compare(index=%d)", index);
+			int result = Score.compare(a.scores[index], b.scores[index]);
+			if (result == 0) {
+				result = b.userId - a.userId;
+			}
+			return result < 0;
+		};
+	}
+	
+	/*
 	static bool compareByScoreReverse(User a, User b) {
 		if (a.score == b.score) {
 			if (a.timestamp == b.timestamp) {
@@ -60,9 +122,10 @@ class User {
 			return a.score < b.score;
 		}
 	}
+	*/
 	
 	public string toString() {
-		return std.string.format("User(userId:%d, timestamp:%d, score:%d)", userId, timestamp, score);
+		return std.string.format("User(userId:%d, %s)", userId, scores);
 	}
 }
 
@@ -87,7 +150,8 @@ void measurePerformance(bool useStats)() {
 	measure("Total", {
 		int itemSize = 1_000_000;
 		
-		auto items = new RedBlackTree!(User, User.compareByScore, false, useStats)();
+		//auto items = new RedBlackTree!(User, User.compareByScore, false, useStats)();
+		auto items = new RedBlackTree!(User, useStats ? RedBlackOptions.HAS_STATS : RedBlackOptions.NONE)(User.getCompareByScoreIndex(0));
 		User generate(uint id) {
 			return new User(id, id * 100, id);
 		}
@@ -192,16 +256,26 @@ void measurePerformance(bool useStats)() {
 	});
 }
 
-class UserStats {
-	alias RedBlackTree!(User, User.compareByUserId, false, false) UserTreeById;
-	alias RedBlackTree!(User, User.compareByScoreReverse, false, true) UserTreeByScore;
+void test2() {
+	GC.disable();
+	{
+		measurePerformance!(true);
+		measurePerformance!(false);
+	}
+	GC.enable();
+	GC.collect();
+}
 
-	public UserTreeById    users;
-	public UserTreeByScore usersByScore;
+class UserStats {
+	alias RedBlackTree!(User, RedBlackOptions.HAS_STATS) UserTreeWithStats;
+	alias RedBlackTree!(User                           ) UserTreeWithoutStats;
+
+	public UserTreeWithoutStats    users;
+	public UserTreeWithStats[]     usersByScores;
 	
 	public this() {
-		users        = new UserTreeById();
-		usersByScore = new UserTreeByScore();
+		users        = new UserTreeWithoutStats(&User.compareByUserId);
+		//usersByScore = new UserTreeWithStats(&User.compareByUserId);
 	}
 	
 	static void set(TreeType, ElementType)(TreeType tree, ElementType item) {
@@ -213,97 +287,92 @@ class UserStats {
 		}
 	}
 	
-	public int locateById(int userId) {
-		scope node = users._find(new User(userId, 0, 0));
+	public int locateById(int userId, int index = 0) {
+		//throw(new Exception("Error"));
+		scope node = users._find(new User(userId));
+		auto usersByScore = usersByScores[0]; 
 		return usersByScore.getNodePosition(usersByScore._find(node.value));
 	}
 	
 	public void setUser(User newUser) {
+		//writefln("[a1]");
 		scope oldNode = users._find(newUser);
 		if (oldNode !is null) {
+			if (oldNode.value.userId != newUser.userId) throw(new Exception("Error"));
+		}
+		
+		while (usersByScores.length < newUser.scores.length) {
+			usersByScores ~= new UserTreeWithStats(User.getCompareByScoreIndex(usersByScores.length));
+		}
+		
+		//writefln("[a2]");
+		if (oldNode !is null) {
+			//writefln("[a3]");
 			User oldUser = oldNode.value;
+			//writefln("[a4]");
 			users.removeKey(oldUser);
-			usersByScore.removeKey(oldUser);
+			
+			foreach (k, usersByScore; usersByScores) {
+				if (k < newUser.scores.length && newUser.scores[k].enabled) {
+					if (oldUser.scores[k].enabled) {
+						usersByScore.removeKey(oldUser);
+					}
+				}
+			}
+			
+			//writefln("[a5]");
+			//usersByScore.removeKey(oldUser);
+			//writefln("[a6]");
 		}
+		//writefln("[a7]");
 		users.insert(newUser);
-		usersByScore.insert(newUser);
-	}
-}
+		//writefln("[a8]");
+		//usersByScore.insert(newUser);
 
-void test1() {
-	Random gen;
-	
-	UserStats userStats = new UserStats();
-	for (int n = 0; n < 1000; n++) {
-		int score;
-		score = (n < 20) ? 2980 : uniform(0, 3000, gen);
-		userStats.setUser(new User(n, score, 10000 - n * 2));
-	}
-	userStats.setUser(new User(1000, 99, 400));
-	userStats.setUser(new User(1001, 1000, 400));
-	userStats.setUser(new User(1000, 20000, 400));
-	int k;
-	
-	writefln("-----------------------------");
-	
-	k = 0;
-	foreach (user; userStats.usersByScore.all()) {
-		writefln("%d: %s", k + 1, user);
-		k++;
-	}
-	
-	writefln("-----------------------------");
-	
-	k = 0;
-	foreach (user; userStats.usersByScore.all().limit(10)) {
-		writefln("%d: %s", k + 1, user);
-		k++;
-	}
-
-	foreach (indexToSearch; [300, 1001, 1000]) {	
-		writefln("-----------------------------");
-		
-		writefln("Locate user(%d) : %d", indexToSearch, userStats.locateById(indexToSearch) + 1);
-		
-		writefln("-----------------------------");
-		
-		int skipCount = userStats.locateById(indexToSearch);
-		k = skipCount;
-		foreach (user; userStats.usersByScore.all().skip(skipCount).limit(10)) {
-			writefln("%d - %s", k + 1, user);
-			k++;
+		foreach (k, usersByScore; usersByScores) {
+			if (newUser.scores[k].enabled) {
+				usersByScore.insert(newUser);
+			}
 		}
-	}
-	
-	writefln("-----------------------------");
-}
 
-void test2() {
-	GC.disable();
-	{
-		measurePerformance!(true);
-		measurePerformance!(false);
+		//writefln("[a9]");
 	}
-	GC.enable();
-	GC.collect();
 }
 
 class RankingClient {
+	bool alive;
 	public Socket socket;
 	ubyte[] data;
+	RankingServer rankingServer;
 	
-	public this(Socket socket) {
+	public this(Socket socket, RankingServer rankingServer) {
+		this.rankingServer = rankingServer;
 		this.socket = socket;
-		socket.blocking = false;
+		this.alive = true;
+		this.socket.blocking = false;
 	}
 	
 	void init() {
 		//this.socket.send("Hello World!\r\n");
 	}
 	
+	bool isAlive() {
+		return this.alive && (socket !is null) && socket.isAlive;
+	}
+	
 	bool receive() {
 		scope ubyte[] temp = new ubyte[1024];
 		//writefln("%s %s", socket, this);
+		
+		int totalReceivedLength = socket.receive(temp);
+		if (totalReceivedLength <= 0) {
+			alive = false;
+			return false;
+		}
+		data ~= temp[0..totalReceivedLength];
+		handleData();
+		
+		/*
 		int totalReceivedLength = 0;
 		while (true) {
 			int receivedLength = socket.receive(temp);
@@ -314,20 +383,145 @@ class RankingClient {
 			data ~= temp[0..receivedLength];
 		}
 		handleData();
-		return (totalReceivedLength > 0);
+		*/
+		//writefln("LEN: %d", data.length);
+		//return (totalReceivedLength > 0);
+		return true;
 	}
 	
-	void handlePacket(ubyte[] data) {
-		switch (data[0]) {
-			case 1:
-			break;
+	void close() {
+		this.alive = false;
+		this.socket.close();
+		//this.socket = null;
+	}
+	
+	static enum PacketType : ubyte {
+		Ping               = 0,
+		ListItems          = 1,
+		SetUser            = 2,
+		LocateUserPosition = 3,
+	}
+	
+	void sendPacket(PacketType packetType, ubyte[] data = []) {
+		ushort packetSize = cast(ushort)data.length;
+		assert (packetSize == data.length);
+		
+		//scope temp = new ubyte[packetSize.sizeof + 1 + data.length]
+		
+		scope temp = TA(packetSize) ~ TA(packetType) ~ data;
+		socket.send(temp);
+		//writefln("sendPacket(%d)", packetType);
+	}
+	
+	void handlePacket_SetUser(ubyte[] data) {
+		struct Request {
+			uint userId;
+			uint scoreIndex;
+			int scoreTimestamp;
+			int scoreValue;
 		}
+		
+		struct Response {
+		}
+		
+		if (data.length < Request.sizeof) throw(new Exception("Invalid packet size"));
+		
+		Request  request = *(cast(Request *)data.ptr);
+		Response response;
+	
+		rankingServer.userStats.setUser(User.create(request.userId).setScore(request.scoreValue, request.scoreTimestamp, request.scoreIndex));
+					
+		sendPacket(PacketType.SetUser, TA(response));
+	}
+	
+	void handlePacket_LocateUserPosition(ubyte[] data) {
+		struct Request {
+			uint userId;
+			uint scoreIndex;
+		}
+		
+		struct Response {
+			uint position;
+		}
+		
+		if (data.length < Request.sizeof) throw(new Exception("Invalid packet size"));
+
+		Request  request = *(cast(Request *)data.ptr);
+		Response response;
+		
+		response.position = rankingServer.userStats.locateById(request.userId, request.scoreIndex);
+		
+		sendPacket(PacketType.LocateUserPosition, TA(response));
+	}
+	
+	void handlePacket_ListItems(ubyte[] data) {
+		struct Request {
+			uint scoreIndex;
+			uint offset;
+			uint count;
+		}
+		
+		struct ResponseEntry {
+			uint position;
+			uint userId;
+			uint score;
+			uint timestamp;
+		}
+
+		if (data.length < Request.sizeof) throw(new Exception("Invalid packet size"));
+
+		Request  request = *(cast(Request *)data.ptr);
+		MemoryStream response = new MemoryStream();
+		int k = request.offset;
+		foreach (User user; rankingServer.userStats.usersByScores[request.scoreIndex].all().skip(request.offset).limit(request.count)) {
+			ResponseEntry responseEntry;
+			responseEntry.userId = user.userId;
+			responseEntry.position = k;
+			responseEntry.score = user.scores[request.scoreIndex].score;
+			responseEntry.timestamp = user.scores[request.scoreIndex].timestamp;
+			response.write(TA(responseEntry));
+			k++;
+		}
+		
+		sendPacket(PacketType.ListItems, response.data);
+	}
+	
+	void handlePacket(PacketType packetType, ubyte[] data) {
+		writefln("HandlePacket(%d:%s)", packetType, to!string(packetType));
+		try {
+			switch (packetType) {
+				case PacketType.Ping:
+					sendPacket(PacketType.Ping, []);
+				break;
+				case PacketType.ListItems:
+					handlePacket_ListItems(data);
+					//scope s = new MemoryStream();
+					//s.
+					sendPacket(PacketType.ListItems, []);
+				break;
+				case PacketType.SetUser:
+					handlePacket_SetUser(data);
+				break;
+				case PacketType.LocateUserPosition:
+					handlePacket_LocateUserPosition(data);
+				break;
+				default:
+					throw(new Exception(std.string.format("Invalid packet 0x%02X", packetType)));
+					this.close();
+				break;
+			}
+		} catch (Throwable o) {
+			writefln("ERROR: %s", o);
+			this.close();
+		}
+		writefln("HandlePacket(%d:/%s)", packetType, to!string(packetType));
 	}
 	
 	void handleData() {
 		ushort packetSize;
+		uint completedCount = 0;
 		//writefln("[1]");
-		if (data.length >= packetSize.sizeof) {
+		while (data.length >= packetSize.sizeof) {
 			packetSize = *cast(typeof(packetSize) *)data.ptr;
 			
 			int packetTotalLength = packetSize.sizeof + 1 + packetSize;
@@ -335,9 +529,18 @@ class RankingClient {
 			//writefln("[2] %d, %d", packetSize, data.length);
 			if (data.length >= packetTotalLength) {
 				//writefln("[3]");
-				handlePacket(data[packetSize.sizeof..packetTotalLength].dup);
+				handlePacket(cast(PacketType)data[packetSize.sizeof], data[packetSize.sizeof + 1..packetTotalLength].dup);
 				data = data[packetTotalLength..$].dup;
+				completedCount++;
+			} else {
+				break;
 			}
+		}
+
+		if (completedCount == 0) {
+			//writefln("Not completed (%d)", data.length);
+		} else {
+			//writefln("Completed(%d)(%d)", completedCount, data.length);
 		}
 		/*
 		int index;
@@ -351,13 +554,17 @@ class RankingClient {
 }
 
 class RankingServer : TcpSocket {
-	this() {
-		bind(new InternetAddress("0.0.0.0", 9777));
-		listen(1024);
-		blocking = false;
-	}
-	
 	RankingClient[Socket] clients;
+	UserStats userStats;
+
+	this() {
+		userStats = new UserStats();
+
+		blocking = false;
+		//bind(new InternetAddress("0.0.0.0", 9777));
+		bind(new InternetAddress("127.0.0.1", 9777));
+		listen(1024);
+	}
 	
 	void acceptLoop() {
 		Socket socketClient;
@@ -374,7 +581,7 @@ class RankingServer : TcpSocket {
 			if (readSet.isSet(this)) {
 				socketClient = accept();
 				if (socketClient !is null) {
-					RankingClient rankingClient = new RankingClient(socketClient);
+					RankingClient rankingClient = new RankingClient(socketClient, this);
 					clients[socketClient] = rankingClient; 
 					rankingClient.init();
 					//rankingClient.receive();
@@ -385,10 +592,23 @@ class RankingServer : TcpSocket {
 
 			foreach (Socket socket, RankingClient client; clients) {
 				if (readSet.isSet(socket)) {
-					if (!client.receive()) {
+					//writefln("readSet");
+					client.receive();
+					if (!client.isAlive) {
+						//writefln("removed!");
 						clients.remove(socket);
 						goto readSockets;					
 					}
+					/*
+					if (!client.receive()) {
+					}
+					*/
+				}
+				if (writeSet.isSet(socket)) {
+					writefln("writeSet");
+				}
+				if (errorSet.isSet(socket)) {
+					writefln("errorSet");
 				}
 			}
 			
@@ -399,12 +619,91 @@ class RankingServer : TcpSocket {
 	}
 }
 
-int main(string[] args) {
+void test3() {
+	system(std.string.format("taskkill /F /IM rbtree_with_stats.exe /FI \"PID ne %d\" > NUL 2> NUL", std.process.getpid));
+	
 	RankingServer socketServer = new RankingServer();
 	socketServer.acceptLoop();
+}
 
+void test1() {
+	Random gen;
+	
+	//writefln("[1]");
+	UserStats userStats = new UserStats();
+	//writefln("[2]");
+	for (int n = 0; n < 1000; n++) {
+		int score;
+		score = (n < 20) ? 2980 : uniform(0, 3000, gen);
+		//writefln("[1:%d]", n);
+		User user = User.create(n).setScore(score, 10000 - n * 2);
+		//writefln("[a]");
+		userStats.setUser(user);
+	}
+	//writefln("[3]");
+	userStats.setUser(User.create(1000).setScore(99, 400));
+	userStats.setUser(User.create(1001).setScore(1000, 400));
+	userStats.setUser(User.create(1000).setScore(20000, 400));
+	int k;
+	
+	writefln("-----------------------------");
+	
+	k = 0;
+	foreach (user; userStats.usersByScores[0].all()) {
+		writefln("%d: %s", k + 1, user);
+		k++;
+	}
+	
+	writefln("-----------------------------");
+	
+	k = 0;
+	foreach (user; userStats.usersByScores[0].all().limit(10)) {
+		writefln("%d: %s", k + 1, user);
+		k++;
+	}
+
+	foreach (indexToSearch; [300, 1001, 1000]) {	
+		writefln("-----------------------------");
+		
+		writefln("Locate user(%d) : %d", indexToSearch, userStats.locateById(indexToSearch) + 1);
+		
+		writefln("-----------------------------");
+		
+		int skipCount = userStats.locateById(indexToSearch);
+		k = skipCount;
+		foreach (user; userStats.usersByScores[0].all().skip(skipCount).limit(10)) {
+			writefln("%d - %s", k + 1, user);
+			k++;
+		}
+	}
+	
+	writefln("-----------------------------");
+}
+
+void test0() {
+	UserStats userStats = new UserStats();
+	Random gen;
+	foreach (z; [0, 1]) {
+		int time = 1308050393 + z;
+		for (int n = 0; n < 5; n++) {
+			userStats.setUser(User.create(n).setScore(uniform(0, 500, gen), time + uniform(-50, 4, gen)));
+		}
+		
+		//userStats.setUser(User.create(1000).setScore(200, time + 0));
+		//userStats.setUser(User.create(1001).setScore(300, time + 0));
+		//userStats.setUser(User.create(1000).setScore(300, time + 1));
+		
+		foreach (user; userStats.usersByScores[0].all().skip(0).limit(20)) {
+			writefln("%s", user);
+		}
+	} 
+}
+
+int main(string[] args) {
+	test0();
 	//test1();
 	//test2();
+	//test3();
 	
 	return 0;
 }

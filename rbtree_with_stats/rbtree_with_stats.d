@@ -308,7 +308,6 @@ struct RBNode(V, bool hasStats)
         return &this;
     }
 
-
     /**
      * Returns true if this node is a left child.
      *
@@ -715,6 +714,12 @@ struct RBNode(V, bool hasStats)
     }
 }
 
+enum RedBlackOptions {
+	NONE             = 0,
+	ALLOW_DUPLICATES = 1,
+	HAS_STATS        = 2,
+}
+
 /**
  * Implementation of a $(LUCKY red-black tree) container.
  *
@@ -735,12 +740,25 @@ struct RBNode(V, bool hasStats)
  * ignored on insertion.  If duplicates are allowed, then new elements are
  * inserted after all existing duplicate elements.
  */
-class RedBlackTree(T, alias less = "a < b", bool allowDuplicates = false, bool hasStats = false)
-    if(is(typeof(binaryFun!less(T.init, T.init))))
+class RedBlackTree(T, RedBlackOptions redBlackOptions = RedBlackOptions.NONE)
+    //if(is(typeof(binaryFun!less(T.init, T.init))))
 {
-    alias binaryFun!less _less;
+    //alias binaryFun!less _less;
+    public bool delegate(T, T) _less;
+    //public bool function(T, T) _lessFunc;
     
-    static assert (!(allowDuplicates && hasStats));
+   	static const bool allowDuplicates = (redBlackOptions & RedBlackOptions.ALLOW_DUPLICATES) ? true : false;
+   	static const bool hasStats = (redBlackOptions & RedBlackOptions.HAS_STATS) ? true : false;
+    
+    /*
+    static bool allowDuplicates() {
+    	return (redBlackOptions & RedBlackOptions.ALLOW_DUPLICATES) ? true : false;
+    }
+    */
+    
+    static if (hasStats) {
+		static assert (!allowDuplicates);    	
+    }
 
     // BUG: this must come first in the struct due to issue 2810
 
@@ -1584,20 +1602,27 @@ assert(std.algorithm.equal(rbt[], [5]));
     +/
 
     /++ +/
-    this()
+    this(typeof(_less) _less)
     {
+        this._less = _less;
         _setup();
+    }
+    
+    this(bool function(T, T) _lessFunc) {
+    	this(delegate(T a, T b) { return _lessFunc(a, b); });
     }
 
     /++
        Constructor.  Pass in an array of elements, or individual elements to
        initialize the tree with.
      +/
+    /*
     this(Elem[] elems...)
     {
         _setup();
         stableInsert(elems);
     }
+    */
 
     private this(Node end, size_t length)
     {
@@ -1647,6 +1672,7 @@ assert(std.algorithm.equal(rbt[], [5]));
 	alias countLesser getNodePosition;
 	
 	Node locateNodeAtPosition(int positionToFind) {
+		if (positionToFind < 0) throw(new Exception("Negative locateNodeAt"));
 		static if (hasStats) {
 			// log(n) ^^ 2
 			/*static if (false) {
@@ -1674,17 +1700,33 @@ assert(std.algorithm.equal(rbt[], [5]));
 				//writefln("Root(%s/%s)", _end.childCountLeft, _end.childCountRight);
 				Node current = _end;
 				int currentPosition = _end.childCountLeft;
+				
+				//writefln("[AA---(%d)]", positionToFind);
+				
+				void checkCurrentNull() {
+					if (current is null) {
+						//_end.leftmost.printTree();
+						_end.printTree();
+						throw(new Exception("Node not found"));
+					}
+				}
+				
 				while (true) {
+					checkCurrentNull();
+					//writefln("%s : %d", current, currentPosition);
+					
 					//int currentPositionExpected = getNodePosition(current);
 					if (currentPosition == positionToFind) return current;
 					
 					if (positionToFind < currentPosition) {
 						//currentPosition += current.childCountLeft;
 						current = current.left;
+						checkCurrentNull();
 						//writefln("Left(%s/%s) ::: %d-%d", current.childCountLeft, current.childCountRight, currentPosition, current.childCountRight);
 						currentPosition -= current.childCountRight + 1;
 					} else {
 						current = current.right;
+						checkCurrentNull();
 						//writefln("Right(%s/%s) ::: %d+%d", current.childCountLeft, current.childCountRight, currentPosition, current.childCountLeft);
 						currentPosition += current.childCountLeft + 1;
 					}
@@ -1694,6 +1736,7 @@ assert(std.algorithm.equal(rbt[], [5]));
 			return null;
 			//throw(new Exception("Can't find position"));
 		} else {
+			//writefln("[BB---(%d)]", positionToFind);
 			Node current = _end.leftmost;
 			while (current != _end) {
 				if (positionToFind == 0) return current;
