@@ -497,7 +497,6 @@ class RankingClient {
 					handlePacket_ListItems(data);
 					//scope s = new MemoryStream();
 					//s.
-					sendPacket(PacketType.ListItems, []);
 				break;
 				case PacketType.SetUser:
 					handlePacket_SetUser(data);
@@ -735,11 +734,9 @@ void test0b() {
 int main(string[] args) {
 	//test0b();
 	//test0();
-	test1();
+	//test1();
 	//test2();
-	//test3();
-	
-	
+	test3();
 	
 	return 0;
 }

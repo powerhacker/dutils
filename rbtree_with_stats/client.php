@@ -57,7 +57,7 @@ class SocketClient {
 		}
 		$end = microtime(true);
 		
-		printf("%.6f\n", $end - $start);
+		//printf("%.6f\n", $end - $start);
 		
 		return $response;
 	}
@@ -123,9 +123,9 @@ $socketClient = new SocketClient();
 $socketClient->connect('127.0.0.1', 9777);
 $time = time();
 
-//for ($n = 0; $n < 1000; $n++) {
+for ($n = 0; $n < 1000; $n++) {
 //for ($n = 0; $n < 100; $n++) {
-for ($n = 0; $n < 20; $n++) {
+//for ($n = 0; $n < 20; $n++) {
 	$socketClient->setUser($n, 0, $time + mt_rand(-50, 4), mt_rand(0, 500));
 }
 
@@ -133,10 +133,12 @@ $socketClient->setUser(1000, 0, $time, 200);
 $socketClient->setUser(1001, 0, $time, 300);
 $socketClient->setUser(1000, 0, $time + 1, 300);
 
-printf("Position(1000):%d\n", $socketClient->locateUserPosition(1000, 0));
-printf("Position(1001):%d\n", $socketClient->locateUserPosition(1001, 0));
+printf("Position(1000):%d\n", $pos_1000 = $socketClient->locateUserPosition(1000, 0));
+printf("Position(1001):%d\n", $pos_1001 = $socketClient->locateUserPosition(1001, 0));
 
-print_r($socketClient->listItems(0, 0, 20));
+print_r($socketClient->listItems(0, $pos_1000, 3));
+print_r($socketClient->listItems(0, 0, 3));
+//print_r($socketClient->listItems(0, 20, 20));
 
 
 
