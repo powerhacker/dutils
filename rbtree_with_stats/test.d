@@ -400,6 +400,7 @@ class RankingClient {
 		ListItems          = 1,
 		SetUser            = 2,
 		LocateUserPosition = 3,
+		SetUsers           = 4,
 	}
 	
 	void sendPacket(PacketType packetType, ubyte[] data = []) {
@@ -426,10 +427,14 @@ class RankingClient {
 		
 		if (data.length < Request.sizeof) throw(new Exception("Invalid packet size"));
 		
-		Request  request = *(cast(Request *)data.ptr);
+		int count = data.length / Request.sizeof;
+
 		Response response;
-	
-		rankingServer.userStats.setUser(User.create(request.userId).setScore(request.scoreValue, request.scoreTimestamp, request.scoreIndex));
+
+		for (int n = 0; n < count; n++) {
+			Request  request = (cast(Request *)data.ptr)[n];
+			rankingServer.userStats.setUser(User.create(request.userId).setScore(request.scoreValue, request.scoreTimestamp, request.scoreIndex));
+		}
 					
 		sendPacket(PacketType.SetUser, TA(response));
 	}
@@ -487,7 +492,7 @@ class RankingClient {
 	}
 	
 	void handlePacket(PacketType packetType, ubyte[] data) {
-		writefln("HandlePacket(%d:%s)", packetType, to!string(packetType));
+		//writefln("HandlePacket(%d:%s)", packetType, to!string(packetType));
 		try {
 			switch (packetType) {
 				case PacketType.Ping:
@@ -499,6 +504,9 @@ class RankingClient {
 					//s.
 				break;
 				case PacketType.SetUser:
+					handlePacket_SetUser(data);
+				break;
+				case PacketType.SetUsers:
 					handlePacket_SetUser(data);
 				break;
 				case PacketType.LocateUserPosition:

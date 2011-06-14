@@ -5,6 +5,7 @@ class PacketType {
 	const ListItems          = 1;
 	const SetUser            = 2;
 	const LocateUserPosition = 3;
+	const SetUsers           = 4;
 	
 	static public function toString($v) {
 		static $lookup;
@@ -66,6 +67,11 @@ class SocketClient {
 		return $this->sendPacket(PacketType::Ping);
 	}
 	
+	//const MAX_SET_USERS = 4000; // pow(2, 16) / (4 * 4)
+	//const MAX_SET_USERS = 4096; // pow(2, 16) / (4 * 4)
+	const MAX_SET_USERS = 4095; // pow(2, 16) / (4 * 4)
+	protected $setUsers = array();
+	
 	public function setUser($userId, $scoreIndex, $scoreTimestamp, $scoreValue) {
 		$result = $this->sendPacket(
 			PacketType::SetUser,
@@ -74,8 +80,51 @@ class SocketClient {
 		//print_r($result);
 		return $result;
 	}
+	
+	public function setUsers($infos) {
+		assert(count($this->setUsers) <= self::MAX_SET_USERS);
+		$data = '';
+		foreach ($infos as $info) {
+			//$data .= pack('V*', $userId, $scoreIndex, $scoreTimestamp, $scoreValue);
+			$data .= pack('V*', $info[0], $info[1], $info[2], $info[3]);
+			//if (strlen($data) > )
+		}
+		$result = $this->sendPacket(PacketType::SetUsers, $data);
+	}
+
+	public function setUserBuffer($userId, $scoreIndex, $scoreTimestamp, $scoreValue) {
+		$this->setUsers[] = array($userId, $scoreIndex, $scoreTimestamp, $scoreValue);
+		if (count($this->setUsers) >= self::MAX_SET_USERS) {
+			$this->setUserBufferFlush();
+		}
+		static $shutdown_callback;
+		if (!isset($shutdown_callback)) {
+			$shutdown_callback = true;
+			register_shutdown_function(array($this, 'setUserBufferFlush'));
+		}
+	}
+	
+	public function setUserBufferFlush() {
+		if (empty($this->setUsers)) return;
+
+		$start = microtime(true);
+		{
+			if (true) {
+				$this->setUsers($this->setUsers);
+			} else {
+				foreach ($this->setUsers as $user) {
+					call_user_func_array(array($this, 'setUser'), $user);
+				}
+			}
+			$this->setUsers = array();
+		}
+		$end = microtime(true);
+		//printf("%.6f\n", $end - $start);
+	}
 
 	public function locateUserPosition($userId, $scoreIndex) {
+		$this->setUserBufferFlush();
+		
 		$result = $this->sendPacket(
 			PacketType::LocateUserPosition,
 			pack('V*', $userId, $scoreIndex)
@@ -86,6 +135,8 @@ class SocketClient {
 	}
 
 	public function listItems($scoreIndex, $offset, $count) {
+		$this->setUserBufferFlush();
+	
 		$result = $this->sendPacket(
 			PacketType::ListItems,
 			pack('V*', $scoreIndex, $offset, $count)
@@ -123,15 +174,17 @@ $socketClient = new SocketClient();
 $socketClient->connect('127.0.0.1', 9777);
 $time = time();
 
+//for ($n = 0; $n < 100000; $n++) {
 for ($n = 0; $n < 1000; $n++) {
 //for ($n = 0; $n < 100; $n++) {
 //for ($n = 0; $n < 20; $n++) {
-	$socketClient->setUser($n, 0, $time + mt_rand(-50, 4), mt_rand(0, 500));
+	$socketClient->setUserBuffer($n, 0, $time + mt_rand(-50, 4), mt_rand(0, 500));
 }
 
-$socketClient->setUser(1000, 0, $time, 200);
-$socketClient->setUser(1001, 0, $time, 300);
-$socketClient->setUser(1000, 0, $time + 1, 300);
+$socketClient->setUserBuffer(1000, 0, $time, 200);
+$socketClient->setUserBuffer(1001, 0, $time, 300);
+$socketClient->setUserBuffer(1000, 0, $time + 1, 300);
+//$socketClient->setUserBufferFlush();
 
 printf("Position(1000):%d\n", $pos_1000 = $socketClient->locateUserPosition(1000, 0));
 printf("Position(1001):%d\n", $pos_1001 = $socketClient->locateUserPosition(1001, 0));
