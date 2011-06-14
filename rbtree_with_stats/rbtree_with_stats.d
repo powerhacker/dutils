@@ -8,6 +8,7 @@ import std.stdio;
 
 //debug = RB_ROTATION;
 //debug = RB_ADD;
+//debug = RB_REMOVE;
 
 /*
 void swap(T)(ref T a, ref T b) {
@@ -52,11 +53,25 @@ struct RBNode(V, bool hasStats)
 		return it._left;
 	}
 	
+	int debugCountCheck() {
+		int leftCount;
+		int rightCount;
+		if (_left  !is null) leftCount = _left.debugCountCheck();
+		if (_right !is null) rightCount = _right.debugCountCheck();
+		static if (hasStats) {
+			assert (leftCount == childCountLeft);
+			assert (rightCount == childCountRight);
+		}
+		return 1 + leftCount + rightCount;
+	}
+	
 	static if (hasStats) {
 		void updateCurrentAndAncestors(int countIncrement) {
 			auto prev = &this;
 			auto it = this.parent;
 			while (it) {
+				// @TODO: Change
+				// prev.isLeftNode
 				if (it.left is prev) it.childCountLeft += countIncrement;
 				else if (it.right is prev) it.childCountRight += countIncrement;
 				prev = it;
@@ -426,6 +441,14 @@ struct RBNode(V, bool hasStats)
             color = Color.Black;
         }
     }
+    
+    void setParentThisChild(Node newThis) {
+        if (isLeftNode) {
+            _parent.left = newThis;
+        } else {
+            _parent.right = newThis;
+		}
+    }
 
     /**
      * Remove this node from the tree.  The 'end' node is used as the marker
@@ -437,7 +460,23 @@ struct RBNode(V, bool hasStats)
     Node remove(Node end)
     {
     	static if (hasStats) {
-			updateCurrentAndAncestors(-1);
+    		debug (RB_REMOVE) {
+    			writefln("remove(%s)", this);
+    		}
+			debug (RB_REMOVE) {
+				writefln("BEFORE R ------------------------------------------------");
+				end.printTree();
+			}
+			//updateCurrentAndAncestors(-(childCountLeft + childCountRight + 1));
+			//debug (RB_ADD) {
+		}
+		scope (exit) {
+			static if (hasStats) {
+				debug (RB_REMOVE) {
+					writefln("AFTER R ------------------------------------------------");
+					end.printTree();
+				}
+			}
 		}
 
         //
@@ -447,6 +486,7 @@ struct RBNode(V, bool hasStats)
         Node ret;
         if(_left is null || _right is null)
         {
+            //static if (hasStats) updateCurrentAndAncestors(-1);
             ret = next;
         }
         else
@@ -463,16 +503,17 @@ struct RBNode(V, bool hasStats)
             yp = y._parent;
             yl = y._left;
             yr = y._right;
+            static if (hasStats) {
+            	int y_childCountLeft = y.childCountLeft;
+            	int y_childCountRight = y.childCountRight;
+            }
             auto yc = y.color;
             auto isyleft = y.isLeftNode;
 
             //
             // replace y's structure with structure of this node.
             //
-            if(isLeftNode)
-                _parent.left = y;
-            else
-                _parent.right = y;
+            setParentThisChild(y);
             //
             // need special case so y doesn't point back to itself
             //
@@ -482,6 +523,10 @@ struct RBNode(V, bool hasStats)
             else
                 y.right = _right;
             y.color = color;
+            static if (hasStats) {
+	            y.childCountLeft = childCountLeft;
+	            y.childCountRight = childCountRight;
+	        }
 
             //
             // replace this node's structure with structure of y.
@@ -496,12 +541,20 @@ struct RBNode(V, bool hasStats)
                     yp.right = &this;
             }
             color = yc;
+            static if (hasStats) {
+	            childCountLeft = y_childCountLeft;
+	            childCountRight = y_childCountRight;
+	        }
 
             //
             // set return value
             //
             ret = y;
         }
+        
+    	static if (hasStats) {
+    		updateCurrentAndAncestors(-1);
+    	}
 
         // if this has less than 2 children, remove it
         if(_left !is null)
@@ -773,14 +826,20 @@ class RedBlackTree(T, RedBlackOptions redBlackOptions = RedBlackOptions.NONE)
 			debug (RB_ADD) {
 				writefln("_add(%s)", n);
 			}
-			//writefln("- BEFORE ---------------------------------------------------");
-			//result.root.printTree();
+			/*
+			debug (RB_ADD) {
+				writefln("- BEFORE ---------------------------------------------------");
+				result.root.printTree();
+			}
+			*/
 			static if (hasStats) {
 				result.updateCurrentAndAncestors(+1);
 			}
-			//writefln("- AFTER ----------------------------------------------------");
-			//result.root.printTree();
-			//writefln("- /////// --------------------------------------------------");
+			debug (RB_ADD) {
+				writefln("- AFTER ----------------------------------------------------");
+				result.root.printTree();
+				writefln("- /////// --------------------------------------------------");
+			}
 		}
 
         static if(!allowDuplicates)
@@ -1750,6 +1809,18 @@ assert(std.algorithm.equal(rbt[], [5]));
     @property Range all() {
     	//return new Range(_end.leftmost, _end);
     	return new Range(_end.leftmost, _end, 0, _length);
+    }
+    
+    int debugCount() {
+    	return _end.left.debugCountCheck();
+    }
+    
+    void printTree() {
+    	return _end.left.printTree();
+    }
+    
+    void debugValidateTree() {
+    	assert(debugCount() == _length);
     }
 }
 

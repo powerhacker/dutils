@@ -687,11 +687,17 @@ void test0() {
 		int time = 1308050393 + z;
 		for (int n = 0; n < 5; n++) {
 			userStats.setUser(User.create(n).setScore(uniform(0, 500, gen), time + uniform(-50, 4, gen)));
+			userStats.usersByScores[0].debugValidateTree();
 		}
 		
 		//userStats.setUser(User.create(1000).setScore(200, time + 0));
 		//userStats.setUser(User.create(1001).setScore(300, time + 0));
 		//userStats.setUser(User.create(1000).setScore(300, time + 1));
+		
+		writefln("------------------------------");
+		userStats.usersByScores[0].printTree();
+		
+		userStats.usersByScores[0].debugValidateTree();
 		
 		foreach (user; userStats.usersByScores[0].all().skip(0).limit(20)) {
 			writefln("%s", user);
@@ -699,11 +705,41 @@ void test0() {
 	} 
 }
 
+void test0b() {
+	alias RedBlackTree!(int, RedBlackOptions.HAS_STATS) SimpleStats;
+	SimpleStats stats = new SimpleStats(delegate(int a, int b) { return a < b; });
+	stats.insert(5);
+	stats.insert(4);
+	stats.insert(6);
+	stats.insert(3);
+	stats.insert(2);
+	stats.insert(1);
+	stats.insert(6);
+	stats.insert(7);
+	stats.insert(8);
+	stats.insert(9);
+	stats.insert(10);
+	
+	writefln("*********************************************");
+	
+	stats.printTree();
+	stats.debugValidateTree();
+
+	//stats.removeKey(7);
+	stats.removeKey(5);
+	
+	stats.printTree();
+	stats.debugValidateTree();
+}
+
 int main(string[] args) {
-	test0();
-	//test1();
+	//test0b();
+	//test0();
+	test1();
 	//test2();
 	//test3();
+	
+	
 	
 	return 0;
 }
