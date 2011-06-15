@@ -174,11 +174,11 @@ $socketClient = new SocketClient();
 $socketClient->connect('127.0.0.1', 9777);
 $time = time();
 
-//for ($n = 0; $n < 100000; $n++) {
-for ($n = 0; $n < 1000; $n++) {
+for ($n = 0; $n < 100000; $n++) {
+//for ($n = 0; $n < 1000; $n++) {
 //for ($n = 0; $n < 100; $n++) {
 //for ($n = 0; $n < 20; $n++) {
-	$socketClient->setUserBuffer($n, 0, $time + mt_rand(-50, 4), mt_rand(0, 500));
+	$socketClient->setUserBuffer(mt_rand(0, 100000), 0, $time + mt_rand(-50, 4), mt_rand(0, 500));
 }
 
 $socketClient->setUserBuffer(1000, 0, $time, 200);

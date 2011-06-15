@@ -564,26 +564,25 @@ class RankingServer : TcpSocket {
 	RankingClient[Socket] clients;
 	UserStats userStats;
 
-	this() {
+	this(string bindIp = "127.0.0.1", ushort bindPort = 9777) {
 		userStats = new UserStats();
-
 		blocking = false;
-		//bind(new InternetAddress("0.0.0.0", 9777));
-		bind(new InternetAddress("127.0.0.1", 9777));
+		bind(new InternetAddress(bindIp, bindPort));
 		listen(1024);
 	}
 	
 	void acceptLoop() {
 		Socket socketClient;
 		scope SocketSet readSet = new SocketSet();
-		scope SocketSet writeSet = new SocketSet();
-		scope SocketSet errorSet = new SocketSet();
+		//scope SocketSet writeSet = new SocketSet();
+		//scope SocketSet errorSet = new SocketSet();
 		while (true) {
 			readSet.add(this);
 			foreach (socket; clients.keys) {
 				readSet.add(socket);
 			}
-			int count = Socket.select(readSet, writeSet, errorSet);
+			//int count = Socket.select(readSet, writeSet, errorSet);
+			int count = Socket.select(readSet, null, null);
 			
 			if (readSet.isSet(this)) {
 				socketClient = accept();
@@ -604,6 +603,12 @@ class RankingServer : TcpSocket {
 					if (!client.isAlive) {
 						//writefln("removed!");
 						clients.remove(socket);
+						
+						// We will perform a small collection when a client disconnected.
+						// The idea es not to rely on the GC in the future deallocating
+						// all the reserved memory manually. But that will be in a future
+						// version.
+						GC.minimize();
 						goto readSockets;					
 					}
 					/*
@@ -611,17 +616,19 @@ class RankingServer : TcpSocket {
 					}
 					*/
 				}
+				/*
 				if (writeSet.isSet(socket)) {
 					writefln("writeSet");
 				}
 				if (errorSet.isSet(socket)) {
 					writefln("errorSet");
 				}
+				*/
 			}
 			
 			readSet.reset();
-			writeSet.reset();
-			errorSet.reset();
+			//writeSet.reset();
+			//errorSet.reset();
 		}
 	}
 }
